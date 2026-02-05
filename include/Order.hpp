@@ -67,10 +67,6 @@ public:
         remaining_quantity_ -= qty;
     }
 
-    // Intrusive list pointers (for price level)
-    Order* next_;
-    Order* prev_;
-
 private:
     OrderId id_;
     Price price_;
@@ -79,6 +75,11 @@ private:
     Side side_;
     OrderType type_;
     Timestamp timestamp_;
+    
+    // Intrusive list pointers (for price level)
+public:
+    Order* next_;
+    Order* prev_;
 };
 
 } // namespace orderbook

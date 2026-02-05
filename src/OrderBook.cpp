@@ -25,8 +25,11 @@ bool OrderBook::add_limit_order(Order::OrderId id, Side side, Order::Price price
     }
     
     // Add remaining quantity to appropriate side
-    auto& levels = (side == Side::BUY) ? bids_ : asks_;
-    levels[price].add_order(order_ptr);
+    if (side == Side::BUY) {
+        bids_[price].add_order(order_ptr);
+    } else {
+        asks_[price].add_order(order_ptr);
+    }
     
     metrics_.record_add(timer.elapsed_ns());
     return true;  // Order was added to book
@@ -76,64 +79,84 @@ void OrderBook::match_order(Order* incoming_order) {
         return;
     }
     
-    // Get opposite side levels
-    auto& opposite_levels = (incoming_order->side() == Side::BUY) ? asks_ : bids_;
-    
-    // Iterate through price levels until order is filled or no more matches
-    while (!incoming_order->is_filled() && !opposite_levels.empty()) {
-        auto level_it = opposite_levels.begin();
-        PriceLevel& level = level_it->second;
-        Order::Price level_price = level_it->first;
-        
-        // Check if prices cross
-        bool can_match = false;
-        if (incoming_order->type() == OrderType::MARKET) {
-            can_match = true;  // Market orders match at any price
-        } else if (incoming_order->side() == Side::BUY) {
-            can_match = (incoming_order->price() >= level_price);
-        } else {  // SELL
-            can_match = (incoming_order->price() <= level_price);
-        }
-        
-        if (!can_match) {
-            break;  // No more matching possible
-        }
-        
-        // Match against orders at this price level (FIFO)
-        while (!incoming_order->is_filled() && !level.empty()) {
-            Order* resting_order = level.front();
+    // Match based on order side
+    if (incoming_order->side() == Side::BUY) {
+        // Buy order matches against asks (lowest price first)
+        while (!incoming_order->is_filled() && !asks_.empty()) {
+            auto level_it = asks_.begin();
+            PriceLevel& level = level_it->second;
+            Order::Price level_price = level_it->first;
             
-            // Determine trade quantity
-            Order::Quantity trade_qty = std::min(
-                incoming_order->remaining_quantity(),
-                resting_order->remaining_quantity()
-            );
+            // Check if prices cross (buy price must be >= ask price)
+            if (incoming_order->type() != OrderType::MARKET && 
+                incoming_order->price() < level_price) {
+                break;  // No more matching possible
+            }
             
-            // Determine trade price (resting order's price has priority)
-            Order::Price trade_price = resting_order->price();
-            
-            // Execute the trade
-            if (incoming_order->side() == Side::BUY) {
+            // Match against orders at this price level (FIFO)
+            while (!incoming_order->is_filled() && !level.empty()) {
+                Order* resting_order = level.front();
+                
+                Order::Quantity trade_qty = std::min(
+                    incoming_order->remaining_quantity(),
+                    resting_order->remaining_quantity()
+                );
+                
+                Order::Price trade_price = resting_order->price();
                 execute_trade(incoming_order, resting_order, trade_price, trade_qty);
-            } else {
-                execute_trade(resting_order, incoming_order, trade_price, trade_qty);
+                
+                incoming_order->reduce_quantity(trade_qty);
+                resting_order->reduce_quantity(trade_qty);
+                
+                if (resting_order->is_filled()) {
+                    Order::OrderId resting_id = resting_order->id();
+                    level.remove_order(resting_order);
+                    order_map_.erase(resting_id);
+                }
             }
             
-            // Update quantities
-            incoming_order->reduce_quantity(trade_qty);
-            resting_order->reduce_quantity(trade_qty);
-            
-            // Remove filled resting order
-            if (resting_order->is_filled()) {
-                Order::OrderId resting_id = resting_order->id();
-                level.remove_order(resting_order);
-                order_map_.erase(resting_id);
+            if (level.empty()) {
+                asks_.erase(level_it);
             }
         }
-        
-        // Remove empty price level
-        if (level.empty()) {
-            opposite_levels.erase(level_it);
+    } else {
+        // Sell order matches against bids (highest price first)
+        while (!incoming_order->is_filled() && !bids_.empty()) {
+            auto level_it = bids_.begin();
+            PriceLevel& level = level_it->second;
+            Order::Price level_price = level_it->first;
+            
+            // Check if prices cross (sell price must be <= bid price)
+            if (incoming_order->type() != OrderType::MARKET && 
+                incoming_order->price() > level_price) {
+                break;  // No more matching possible
+            }
+            
+            // Match against orders at this price level (FIFO)
+            while (!incoming_order->is_filled() && !level.empty()) {
+                Order* resting_order = level.front();
+                
+                Order::Quantity trade_qty = std::min(
+                    incoming_order->remaining_quantity(),
+                    resting_order->remaining_quantity()
+                );
+                
+                Order::Price trade_price = resting_order->price();
+                execute_trade(resting_order, incoming_order, trade_price, trade_qty);
+                
+                incoming_order->reduce_quantity(trade_qty);
+                resting_order->reduce_quantity(trade_qty);
+                
+                if (resting_order->is_filled()) {
+                    Order::OrderId resting_id = resting_order->id();
+                    level.remove_order(resting_order);
+                    order_map_.erase(resting_id);
+                }
+            }
+            
+            if (level.empty()) {
+                bids_.erase(level_it);
+            }
         }
     }
     
@@ -165,15 +188,27 @@ void OrderBook::remove_order_internal(Order* order) {
     if (!order) return;
     
     // Remove from price level
-    auto& levels = (order->side() == Side::BUY) ? bids_ : asks_;
-    auto level_it = levels.find(order->price());
-    
-    if (level_it != levels.end()) {
-        level_it->second.remove_order(order);
+    if (order->side() == Side::BUY) {
+        auto level_it = bids_.find(order->price());
         
-        // Remove empty price level
-        if (level_it->second.empty()) {
-            levels.erase(level_it);
+        if (level_it != bids_.end()) {
+            level_it->second.remove_order(order);
+            
+            // Remove empty price level
+            if (level_it->second.empty()) {
+                bids_.erase(level_it);
+            }
+        }
+    } else {
+        auto level_it = asks_.find(order->price());
+        
+        if (level_it != asks_.end()) {
+            level_it->second.remove_order(order);
+            
+            // Remove empty price level
+            if (level_it->second.empty()) {
+                asks_.erase(level_it);
+            }
         }
     }
     

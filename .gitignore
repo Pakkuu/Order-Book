@@ -1,0 +1,122 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+bin/
+lib/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# C++ compiled files
+*.o
+*.obj
+*.exe
+*.out
+*.app
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.lai
+*.la
+*.lo
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Executables
+simple_trading
+order_book_tests
+order_book_benchmark
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# IDE - Visual Studio Code
+.vscode/
+*.code-workspace
+
+# IDE - CLion
+.idea/
+cmake-build-*/
+
+# IDE - Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+
+# IDE - Visual Studio
+.vs/
+*.user
+*.suo
+*.sln.docstates
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Profiling and coverage
+*.gcov
+*.gcda
+*.gcno
+coverage/
+*.profdata
+*.profraw
+
+# Valgrind
+*.memcheck
+*.cachegrind
+*.callgrind
+
+# Benchmark results
+benchmark_results/
+*.csv
+*.json
+
+# Test outputs
+Testing/
+test_results/
+
+# Dependencies
+external/
+third_party/
+!external/.gitkeep
+
+# Package managers
+conan/
+vcpkg_installed/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
